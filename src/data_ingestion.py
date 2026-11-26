@@ -56,6 +56,8 @@ def _request_with_retry(
     url: str,
     params: Optional[Dict[str, Any]] = None,
     headers: Optional[Dict[str, str]] = None,
+    max_retries: int = MAX_RETRIES,
+    timeout: int = REQUEST_TIMEOUT_SECONDS,
 ) -> Optional[requests.Response]:
     """Execute an HTTP GET request with exponential backoff retries.
 
@@ -63,17 +65,19 @@ def _request_with_retry(
         url: Target endpoint URL.
         params: Optional query parameters.
         headers: Optional HTTP headers.
+        max_retries: Maximum number of attempts.
+        timeout: Request timeout in seconds.
 
     Returns:
         Response object if status is 200 OK, otherwise None.
     """
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, max_retries + 1):
         try:
             response = requests.get(
                 url,
                 params=params,
                 headers=headers,
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=timeout,
             )
             if response.status_code == 200:
                 return response
@@ -93,7 +97,7 @@ def _request_with_retry(
         except requests.RequestException as exc:
             logger.warning("Request error on %s (attempt %d/%d): %s", url, attempt, MAX_RETRIES, exc)
 
-        if attempt < MAX_RETRIES:
+        if attempt < max_retries:
             sleep_seconds = RETRY_BACKOFF_FACTOR ** attempt
             time.sleep(sleep_seconds)
 
@@ -198,6 +202,10 @@ def _fetch_cpcb_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.Da
         _record_status(city, "CPCB", "Skipped (CPCB_API_KEY not set)")
         logger.info("CPCB API key (%s) not configured; skipping CPCB fetch.", cfg["env_var"])
         return None
+    if api_key == "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69":
+        _record_status(city, "CPCB", "Skipped (CPCB_API_KEY is resource ID, not API key)")
+        logger.warning("CPCB_API_KEY is set to the dataset resource ID; skipping CPCB fetch.")
+        return None
 
     city_info = CITIES.get(city, {})
     params = {
@@ -209,7 +217,7 @@ def _fetch_cpcb_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.Da
     if city_info.get("cpcb_station"):
         params["filters[station]"] = city_info["cpcb_station"]
 
-    resp = _request_with_retry(cfg["base_url"], params=params)
+    resp = _request_with_retry(cfg["base_url"], params=params, max_retries=1, timeout=6)
     if resp is None:
         _record_status(city, "CPCB", "Request failed / unreachable")
         return None
@@ -394,8 +402,57 @@ def _fetch_openweather_aqi(city: str, start_date: str, end_date: str) -> Optiona
         return None
 
 
+def _fetch_openmeteo_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+    """Free Open-Meteo Air Quality API fallback (no API key required)."""
+    city_info = CITIES.get(city)
+    if not city_info:
+        return None
+
+    params = {
+        "latitude": city_info["lat"],
+        "longitude": city_info["lon"],
+        "start_date": start_date,
+        "end_date": end_date,
+        "hourly": "pm2_5,pm10",
+        "timezone": "Asia/Kolkata",
+    }
+    resp = _request_with_retry(API_CONFIG["openmeteo"]["air_quality_url"], params=params)
+    if resp is None:
+        _record_status(city, "Open-Meteo AQI", "Request failed")
+        return None
+
+    try:
+        hourly = resp.json().get("hourly", {})
+        times = hourly.get("time", [])
+        pm25_list = hourly.get("pm2_5", [])
+        pm10_list = hourly.get("pm10", [])
+        if not times or not pm25_list:
+            _record_status(city, "Open-Meteo AQI", "0 rows returned")
+            return None
+
+        df = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(times),
+                "city": city,
+                "pm25": pd.to_numeric(pm25_list, errors="coerce"),
+                "pm10": pd.to_numeric(pm10_list, errors="coerce") if pm10_list else None,
+            }
+        ).dropna(subset=["timestamp", "pm25"])
+        if df.empty:
+            _record_status(city, "Open-Meteo AQI", "0 valid PM2.5 rows")
+            return None
+        df["aqi"] = (df["pm25"] * 1.7).round(1)
+        df["source"] = "openmeteo_aqi"
+        _record_status(city, "Open-Meteo AQI", f"OK ({len(df)} rows)")
+        return df[["timestamp", "city", "aqi", "pm25", "pm10", "source"]]
+    except Exception as exc:
+        _record_status(city, "Open-Meteo AQI", f"Parse error: {exc}")
+        logger.warning("Failed parsing Open-Meteo AQI response for %s: %s", city, exc)
+        return None
+
+
 def fetch_aqi_data(city: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """Fetch historical AQI data with CPCB -> OpenAQ v3 -> OWM Air -> synthetic fallback.
+    """Fetch historical AQI data with CPCB -> OpenAQ v3 -> OWM Air -> Open-Meteo -> synthetic fallback.
 
     Args:
         city: Target city name.
@@ -415,6 +472,10 @@ def fetch_aqi_data(city: str, start_date: str, end_date: str) -> pd.DataFrame:
     if df is None:
         df = _fetch_openweather_aqi(city, start_date, end_date)
         source = "openweathermap_air"
+
+    if df is None:
+        df = _fetch_openmeteo_aqi(city, start_date, end_date)
+        source = "openmeteo_aqi"
 
     if df is None:
         logger.info("Using synthetic AQI fallback for %s (%s to %s).", city, start_date, end_date)

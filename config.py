@@ -81,6 +81,7 @@ API_CONFIG: Dict[str, Dict[str, str]] = {
     },
     "openmeteo": {
         "base_url": "https://archive-api.open-meteo.com/v1/archive",
+        "air_quality_url": "https://air-quality-api.open-meteo.com/v1/air-quality",
     },
 }
 
