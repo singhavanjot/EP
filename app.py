@@ -270,11 +270,16 @@ def main() -> None:
                 city_frames[city] = df_city
                 last_updated_map[city] = updated_ts
 
+    aqi_source = str(primary_df["source"].iloc[-1]) if "source" in primary_df.columns else "unknown"
+    wx_source = str(primary_df["weather_source"].iloc[-1]) if "weather_source" in primary_df.columns else "unknown"
+
     st.sidebar.markdown("---")
     st.sidebar.info(
         "**Batch Refresh Mode:** Data is pulled periodically in batch (daily/weekly), "
         "not via live streaming.\n\n"
-        f"**Last Updated ({primary_city}):** `{last_updated_map.get(primary_city, 'N/A')}`"
+        f"**Last Updated ({primary_city}):** `{last_updated_map.get(primary_city, 'N/A')}`\n\n"
+        f"**AQI Source:** `{aqi_source}`\n\n"
+        f"**Weather Source:** `{wx_source}`"
     )
 
     if primary_city not in city_frames:

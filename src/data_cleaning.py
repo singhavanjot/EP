@@ -95,8 +95,12 @@ def merge_aqi_weather(aqi_df: pd.DataFrame, weather_df: pd.DataFrame) -> pd.Data
     right = weather_df.copy()
     right["timestamp"] = _normalize_timestamps(right["timestamp"])
     right = right.drop_duplicates(subset=["timestamp"], keep="last").sort_values("timestamp")
+    if "source" in right.columns:
+        right = right.rename(columns={"source": "weather_source"})
 
-    weather_cols = ["timestamp"] + [c for c in ("temperature", "humidity", "wind_speed") if c in right.columns]
+    weather_cols = ["timestamp"] + [
+        c for c in ("temperature", "humidity", "wind_speed", "weather_source") if c in right.columns
+    ]
     merged = pd.merge(left, right[weather_cols], on="timestamp", how="left", suffixes=("", "_wx"))
 
     # Fill any short weather gaps via interpolation
