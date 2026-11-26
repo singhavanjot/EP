@@ -261,6 +261,11 @@ def main() -> None:
     horizon_hours = st.sidebar.slider("Forecast Horizon (hours)", min_value=6, max_value=24, value=24, step=6)
     primary_city = st.sidebar.selectbox("Primary City for Deep-Dive & Report", options=selected_cities, index=0)
 
+    if st.sidebar.button("🔄 Refresh Batch Data", width="stretch"):
+        load_city_pipeline.clear()
+        get_cached_model.clear()
+        st.rerun()
+
     city_frames: Dict[str, pd.DataFrame] = {}
     last_updated_map: Dict[str, str] = {}
     with st.spinner("Loading batch AQI & weather datasets..."):
