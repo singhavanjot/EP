@@ -270,6 +270,11 @@ def main() -> None:
                 city_frames[city] = df_city
                 last_updated_map[city] = updated_ts
 
+    if primary_city not in city_frames:
+        st.error(f"No data available for {primary_city}.")
+        st.stop()
+
+    primary_df = city_frames[primary_city]
     aqi_source = str(primary_df["source"].iloc[-1]) if "source" in primary_df.columns else "unknown"
     wx_source = str(primary_df["weather_source"].iloc[-1]) if "weather_source" in primary_df.columns else "unknown"
 
@@ -281,12 +286,6 @@ def main() -> None:
         f"**AQI Source:** `{aqi_source}`\n\n"
         f"**Weather Source:** `{wx_source}`"
     )
-
-    if primary_city not in city_frames:
-        st.error(f"No data available for {primary_city}.")
-        st.stop()
-
-    primary_df = city_frames[primary_city]
 
     # 2. Current AQI + Health Advisory Card
     _render_advisory_cards(city_frames)
