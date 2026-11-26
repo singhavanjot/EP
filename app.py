@@ -106,7 +106,7 @@ def _render_historical_trend(city_frames: Dict[str, pd.DataFrame], primary_city:
 
     fig.add_hline(y=201, line_dash="dash", line_color="orange", annotation_text="Poor / Alert Threshold (201)")
     fig.update_layout(height=420, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _render_correlation_panel(primary_city: str, df: pd.DataFrame):
@@ -187,7 +187,7 @@ def _render_forecast_panel(primary_city: str, df: pd.DataFrame, horizon_hours: i
         )
     )
     fig.update_layout(height=380, xaxis_title="Timestamp", yaxis_title="AQI")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     return forecast_df
 
 
@@ -212,7 +212,7 @@ def _render_seasonal_heatmap(primary_city: str, df: pd.DataFrame) -> None:
         aspect="auto",
     )
     fig.update_layout(height=360)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _render_alerts_panel(primary_city: str, df: pd.DataFrame):
@@ -224,7 +224,7 @@ def _render_alerts_panel(primary_city: str, df: pd.DataFrame):
     st.warning(alerts_summary["summary_text"])
     if not flagged.empty:
         display_cols = [c for c in ["timestamp", "aqi", "category", "traffic_window", "wind_speed"] if c in flagged.columns]
-        st.dataframe(flagged[display_cols].head(50), use_container_width=True)
+        st.dataframe(flagged[display_cols].head(50), width="stretch")
     else:
         st.success("No hours crossed the Poor/Severe AQI threshold in this window.")
     return alerts_summary
