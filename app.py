@@ -7,7 +7,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
 
 from config import CITIES
 from src.alerts import flag_severe_hours, summarize_alerts
@@ -27,245 +26,6 @@ st.set_page_config(
     page_icon="🌫️",
     layout="wide",
 )
-
-
-def _inject_ink_orbit_theme() -> None:
-    """Apply Ink-Orbit architectural styling (hatched accents, crisp borders, mono tags)."""
-    st.markdown(
-        """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
-        html, body, [class*="css"] {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        }
-        code, pre, [data-testid="stMetricValue"] {
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-        }
-        [data-testid="stMetric"] {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(128, 128, 128, 0.25);
-            border-radius: 4px;
-            padding: 12px 14px;
-        }
-        .ib-header-tag {
-            display: inline-block;
-            padding: 3px 10px;
-            font-size: 11.5px;
-            font-family: 'JetBrains Mono', monospace;
-            letter-spacing: 0.04em;
-            border: 1px solid rgba(128, 128, 128, 0.35);
-            background: rgba(128, 128, 128, 0.08);
-            margin-bottom: 6px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _render_ink_orbit_bento(
-    primary_city: str,
-    forecast_df: pd.DataFrame,
-    aqi_source: str,
-    wx_source: str,
-    alerts_summary: Dict,
-) -> None:
-    """Render an interactive Ink-Orbit-style bento overview wired to live AirSense data."""
-    vals = (
-        [round(float(v), 1) for v in forecast_df["yhat"].tolist()[:12]]
-        if forecast_df is not None and not forecast_df.empty
-        else [110, 124, 138, 155, 142, 128, 118, 132, 149, 162, 150, 136]
-    )
-    if len(vals) < 2:
-        vals = [vals[0], vals[0]] if vals else [100, 110]
-
-    severe_count = int(alerts_summary.get("severe_hours", 0))
-    total_hours = int(alerts_summary.get("total_hours", 0))
-    vals_json = str(vals)
-
-    html = f"""
-    <!doctype html>
-    <html>
-    <head>
-    <meta charset="utf-8" />
-    <style>
-      :root {{
-        --page:#efefef; --hatch:rgba(0,0,0,.06); --paper:#fbfbfb; --card:#f4f4f4;
-        --raise:#ffffff; --ink:#151515; --soft:#3d3d3d; --muted:#7b7b7b;
-        --faint:#a8a8a8; --line:#e2e2e2; --line-strong:#cfcfcf; --bracket:#c9c9c9;
-        --inv:#161616; --inv-ink:#f5f5f5;
-        --sans:"Inter",system-ui,-apple-system,sans-serif;
-        --mono:"JetBrains Mono",ui-monospace,monospace;
-      }}
-      @media (prefers-color-scheme: dark) {{
-        :root {{
-          --page:#0b0b0b; --hatch:rgba(255,255,255,.05); --paper:#121212; --card:#181818;
-          --raise:#1e1e1e; --ink:#eeeeee; --soft:#c9c9c9; --muted:#8d8d8d;
-          --faint:#5d5d5d; --line:#262626; --line-strong:#363636; --bracket:#444444;
-          --inv:#efefef; --inv-ink:#121212;
-        }}
-      }}
-      * {{ box-sizing:border-box; margin:0; padding:0; }}
-      body {{
-        font-family:var(--sans); color:var(--ink);
-        background-color:var(--page);
-        background-image:repeating-linear-gradient(135deg,var(--hatch) 0 1px,transparent 1px 10px);
-        padding:18px;
-      }}
-      .sec {{
-        background:var(--paper); border:1px solid var(--line);
-        padding:24px; max-width:1180px; margin:0 auto;
-      }}
-      .head {{ text-align:center; margin-bottom:22px; }}
-      .tag {{
-        display:inline-block; padding:3px 10px; font-size:11px; font-family:var(--mono);
-        color:var(--soft); background:var(--card); border:1px solid var(--line); margin-bottom:8px;
-      }}
-      .h2 {{ font-size:28px; font-weight:600; letter-spacing:-.02em; line-height:1.12; }}
-      .muted {{ color:var(--faint); }}
-      .bento {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
-      @media (max-width:700px) {{ .bento {{ grid-template-columns:1fr; }} }}
-      .wide {{ grid-column:1 / -1; }}
-      .frame {{ position:relative; }}
-      .c {{ position:absolute; width:10px; height:10px; border:0 solid var(--bracket); pointer-events:none; transition:.25s; }}
-      .tl {{ top:-5px; left:-5px; border-top-width:1.5px; border-left-width:1.5px; }}
-      .tr {{ top:-5px; right:-5px; border-top-width:1.5px; border-right-width:1.5px; }}
-      .bl {{ bottom:-5px; left:-5px; border-bottom-width:1.5px; border-left-width:1.5px; }}
-      .br {{ bottom:-5px; right:-5px; border-bottom-width:1.5px; border-right-width:1.5px; }}
-      .frame:hover .c {{ border-color:var(--ink); }}
-      .card {{
-        background:linear-gradient(180deg,var(--raise),var(--card));
-        border:1px solid var(--line); padding:16px; display:flex; flex-direction:column; gap:10px;
-      }}
-      .card h3 {{ font-size:13.5px; font-weight:600; }}
-      .card p {{ font-size:12px; color:var(--muted); line-height:1.45; }}
-      .wide-copy {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
-      svg {{ display:block; width:100%; height:auto; }}
-      .flow {{ stroke:var(--line-strong); fill:none; stroke-width:1.3; }}
-      .dash {{ stroke-dasharray:3 4; animation:dash 1.2s linear infinite; }}
-      @keyframes dash {{ to {{ stroke-dashoffset:-14; }} }}
-      .node {{ fill:var(--raise); stroke:var(--line-strong); }}
-      .pkt {{ fill:var(--ink); }}
-      .tool-pill {{ cursor:pointer; transition:.2s; }}
-      .tool-pill:hover rect {{ stroke:var(--ink); }}
-      .chart {{ cursor:crosshair; }}
-    </style>
-    </head>
-    <body>
-      <div class="sec">
-        <div class="head">
-          <span class="tag">ARCHITECTURE · {primary_city.upper()}</span>
-          <div class="h2">Live <span class="muted">AirSense</span> Pipeline</div>
-        </div>
-        <div class="bento">
-          <div class="frame wide">
-            <span class="c tl"></span><span class="c tr"></span><span class="c bl"></span><span class="c br"></span>
-            <div class="card">
-              <svg viewBox="0 0 640 120" role="img" aria-label="AirSense data pipeline">
-                <path id="l1" d="M130,45 C195,45 210,60 262,60" class="flow" />
-                <path id="l2" d="M130,75 C195,75 210,60 262,60" class="flow dash" />
-                <path id="r1" d="M378,60 C425,60 440,45 490,45" class="flow" />
-                <path id="r2" d="M378,60 C425,60 440,75 490,75" class="flow dash" />
-                <circle r="2.3" class="pkt"><animateMotion dur="2s" repeatCount="indefinite" path="M130,45 C195,45 210,60 262,60"/></circle>
-                <circle r="2.3" class="pkt"><animateMotion dur="2.2s" begin="0.4s" repeatCount="indefinite" path="M378,60 C425,60 440,45 490,45"/></circle>
-                <rect x="24" y="25" width="106" height="70" rx="5" class="node" />
-                <text x="77" y="52" text-anchor="middle" font-size="9" font-weight="600" fill="var(--ink)" font-family="var(--mono)">{primary_city.upper()}</text>
-                <text x="77" y="68" text-anchor="middle" font-size="7.5" fill="var(--muted)" font-family="var(--mono)">{total_hours}h batch</text>
-                <rect x="262" y="38" width="116" height="44" rx="6" class="node" />
-                <text x="320" y="64" text-anchor="middle" font-size="9" letter-spacing="1.4" font-weight="600" fill="var(--ink)" font-family="var(--mono)">AIRSENSE</text>
-                <rect x="490" y="22" width="124" height="76" rx="4" class="node" />
-                <text x="502" y="42" font-size="7.5" fill="var(--muted)" font-family="var(--mono)">ALERTS · {severe_count}h</text>
-                <rect x="502" y="52" width="84" height="5" rx="1" fill="var(--ink)" opacity=".75"/>
-                <rect x="502" y="63" width="98" height="4" rx="1" fill="var(--line-strong)"/>
-                <rect x="502" y="72" width="76" height="4" rx="1" fill="var(--line-strong)"/>
-              </svg>
-              <div class="wide-copy">
-                <div>
-                  <h3>Batch Ingestion & Cleaning</h3>
-                  <p>Hourly AQI ({aqi_source}) and weather ({wx_source}) aligned, outlier-filtered, and tagged for weekday peak traffic.</p>
-                </div>
-                <div>
-                  <h3>Automated Alerts & Reports</h3>
-                  <p>{severe_count} of {total_hours} hours flagged at Poor/Severe AQI with one-click Markdown summary export.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="frame">
-            <span class="c tl"></span><span class="c tr"></span><span class="c bl"></span><span class="c br"></span>
-            <div class="card">
-              <svg viewBox="0 0 300 120">
-                <g class="tool-pill"><rect x="18" y="18" width="118" height="32" rx="5" class="node"/><text x="77" y="38" text-anchor="middle" font-size="8.5" font-family="var(--mono)" fill="var(--ink)">CPCB / OpenAQ v3</text></g>
-                <g class="tool-pill"><rect x="164" y="18" width="118" height="32" rx="5" class="node"/><text x="223" y="38" text-anchor="middle" font-size="8.5" font-family="var(--mono)" fill="var(--ink)">OWM Air Pollution</text></g>
-                <g class="tool-pill"><rect x="18" y="68" width="118" height="32" rx="5" class="node"/><text x="77" y="88" text-anchor="middle" font-size="8.5" font-family="var(--mono)" fill="var(--ink)">Open-Meteo AQI</text></g>
-                <g class="tool-pill"><rect x="164" y="68" width="118" height="32" rx="5" class="node"/><text x="223" y="88" text-anchor="middle" font-size="8.5" font-family="var(--mono)" fill="var(--ink)">Open-Meteo Weather</text></g>
-              </svg>
-              <h3>Multi-Source Fallback Hub</h3>
-              <p>Active AQI: <strong>{aqi_source}</strong> · Active Weather: <strong>{wx_source}</strong>.</p>
-            </div>
-          </div>
-
-          <div class="frame">
-            <span class="c tl"></span><span class="c tr"></span><span class="c bl"></span><span class="c br"></span>
-            <div class="card">
-              <svg id="fc-svg" class="chart" viewBox="0 0 300 120"></svg>
-              <h3>Interactive Forecast Scrub</h3>
-              <p>Hover across the curve to inspect next-hour predicted AQI for {primary_city}.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      <script>
-        (function() {{
-          const vals = {vals_json};
-          const svg = document.getElementById("fc-svg");
-          const W = 300, H = 112, pad = 14;
-          const lo = Math.min(...vals), hi = Math.max(...vals), span = (hi - lo) || 1;
-          const pts = vals.map((v, i) => [
-            pad + (i / (vals.length - 1)) * (W - pad * 2),
-            H - pad - ((v - lo) / span) * (H - pad * 2)
-          ]);
-          let line = "";
-          pts.forEach(([x, y], i) => {{
-            if (i === 0) {{ line = `M${{x.toFixed(1)}},${{y.toFixed(1)}}`; return; }}
-            const [px, py] = pts[i - 1], cx = (px + x) / 2;
-            line += ` C${{cx.toFixed(1)}},${{py.toFixed(1)}} ${{cx.toFixed(1)}},${{y.toFixed(1)}} ${{x.toFixed(1)}},${{y.toFixed(1)}}`;
-          }});
-          const area = line + ` L${{pts[pts.length-1][0].toFixed(1)}},${{H-pad}} L${{pts[0][0].toFixed(1)}},${{H-pad}} Z`;
-          function render(idx) {{
-            const i = idx >= 0 ? idx : pts.length - 1;
-            const [px, py] = pts[i];
-            const tx = Math.min(W - 38, Math.max(38, px));
-            const ty = py < 32 ? py + 20 : py - 10;
-            svg.innerHTML = `
-              <line x1="14" x2="${{W-14}}" y1="${{H*0.33}}" y2="${{H*0.33}}" stroke="var(--line)"/>
-              <line x1="14" x2="${{W-14}}" y1="${{H*0.66}}" y2="${{H*0.66}}" stroke="var(--line)"/>
-              <path d="${{area}}" fill="var(--ink)" opacity="0.08"/>
-              <path d="${{line}}" fill="none" stroke="var(--ink)" stroke-width="1.6"/>
-              <line x1="${{px}}" x2="${{px}}" y1="8" y2="${{H-pad}}" stroke="var(--ink)" stroke-opacity="0.3"/>
-              <circle cx="${{px}}" cy="${{py}}" r="3.4" fill="var(--raise)" stroke="var(--ink)" stroke-width="1.6"/>
-              <g transform="translate(${{tx}},${{ty}})">
-                <rect x="-34" y="-11" width="68" height="15" rx="2" fill="var(--inv)"/>
-                <text x="0" y="-1" text-anchor="middle" font-size="8" fill="var(--inv-ink)" font-family="var(--mono)">+${{i+1}}h: ${{vals[i]}} AQI</text>
-              </g>
-            `;
-          }}
-          render(-1);
-          svg.addEventListener("pointermove", (e) => {{
-            const r = svg.getBoundingClientRect();
-            const mx = ((e.clientX - r.left) / r.width) * W;
-            let best = 0;
-            for (let j = 1; j < pts.length; j++) if (Math.abs(pts[j][0] - mx) < Math.abs(pts[best][0] - mx)) best = j;
-            render(best);
-          }});
-          svg.addEventListener("pointerleave", () => render(-1));
-        }})();
-      </script>
-    </body>
-    </html>
-    """
-    components.html(html, height=580, scrolling=False)
 
 
 @st.cache_data(show_spinner=False)
@@ -472,8 +232,6 @@ def _render_alerts_panel(primary_city: str, df: pd.DataFrame):
 
 def main() -> None:
     """Run the AirSense Streamlit dashboard."""
-    _inject_ink_orbit_theme()
-    st.markdown('<span class="ib-header-tag">AIRSENSE · PUNJAB AQI MONITOR</span>', unsafe_allow_html=True)
     st.title("AirSense — Multi-City Air Quality & Traffic-Window Dashboard")
 
     # 1. Sidebar: City selector & batch metadata
@@ -558,11 +316,7 @@ def main() -> None:
     # 7. Alerts Panel
     alerts_summary = _render_alerts_panel(primary_city, primary_df)
 
-    # 8. Ink-Orbit Architectural Overview Bento
-    st.subheader("Pipeline & Forecast Overview")
-    _render_ink_orbit_bento(primary_city, forecast_df, aqi_source, wx_source, alerts_summary)
-
-    # 9. Download Report Button
+    # 8. Download Report Button
     st.subheader("Export Summary Report")
     report_md = generate_summary_report(
         city=primary_city,
