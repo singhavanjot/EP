@@ -25,6 +25,21 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def _get_secret(key: str) -> str:
+    """Read an API key from environment variables (.env) or Streamlit Cloud secrets."""
+    val = os.getenv(key, "").strip()
+    if val:
+        return val
+    try:
+        import streamlit as st
+
+        if key in st.secrets:
+            return str(st.secrets[key]).strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _request_with_retry(
     url: str,
     params: Optional[Dict[str, Any]] = None,
@@ -163,7 +178,7 @@ def generate_synthetic_data(
 def _fetch_cpcb_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
     """Attempt to pull AQI records from the CPCB data.gov.in API."""
     cfg = API_CONFIG["cpcb"]
-    api_key = os.getenv(cfg["env_var"], "").strip()
+    api_key = _get_secret(cfg["env_var"])
     if not api_key:
         logger.info("CPCB API key (%s) not configured; skipping CPCB fetch.", cfg["env_var"])
         return None
@@ -217,7 +232,7 @@ def _fetch_cpcb_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.Da
 def _fetch_openaq_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
     """Fallback AQI pull from the OpenAQ v2 API."""
     cfg = API_CONFIG["openaq"]
-    api_key = os.getenv(cfg["env_var"], "").strip()
+    api_key = _get_secret(cfg["env_var"])
     if not api_key:
         logger.info("OpenAQ API key (%s) not configured; skipping OpenAQ fetch.", cfg["env_var"])
         return None
@@ -309,7 +324,7 @@ def fetch_weather_data(city: str, start_date: str, end_date: str) -> pd.DataFram
         DataFrame with timestamp, city, temperature, humidity, wind_speed, source.
     """
     cfg = API_CONFIG["openweather"]
-    api_key = os.getenv(cfg["env_var"], "").strip()
+    api_key = _get_secret(cfg["env_var"])
     city_info = CITIES.get(city)
 
     if api_key and city_info:
