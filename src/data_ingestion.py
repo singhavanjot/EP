@@ -24,6 +24,18 @@ from config import (
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+# Per-city diagnostic trail for UI visibility (no secrets included)
+_INGESTION_STATUS: Dict[str, Dict[str, str]] = {}
+
+
+def get_ingestion_status(city: str) -> Dict[str, str]:
+    """Return the latest per-provider status messages for a city."""
+    return dict(_INGESTION_STATUS.get(city, {}))
+
+
+def _record_status(city: str, provider: str, message: str) -> None:
+    _INGESTION_STATUS.setdefault(city, {})[provider] = message
+
 
 def _get_secret(key: str) -> str:
     """Read an API key from environment variables (.env) or Streamlit Cloud secrets."""
@@ -183,6 +195,7 @@ def _fetch_cpcb_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.Da
     cfg = API_CONFIG["cpcb"]
     api_key = _get_secret(cfg["env_var"])
     if not api_key:
+        _record_status(city, "CPCB", "Skipped (CPCB_API_KEY not set)")
         logger.info("CPCB API key (%s) not configured; skipping CPCB fetch.", cfg["env_var"])
         return None
 
@@ -198,6 +211,7 @@ def _fetch_cpcb_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.Da
 
     resp = _request_with_retry(cfg["base_url"], params=params)
     if resp is None:
+        _record_status(city, "CPCB", "Request failed / unreachable")
         return None
 
     try:
@@ -237,67 +251,92 @@ def _fetch_openaq_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.
     cfg = API_CONFIG["openaq"]
     api_key = _get_secret(cfg["env_var"])
     if not api_key:
+        _record_status(city, "OpenAQ v3", "Skipped (OPENAQ_API_KEY not set)")
         logger.info("OpenAQ API key (%s) not configured; skipping OpenAQ fetch.", cfg["env_var"])
         return None
     headers = {"X-API-Key": api_key}
 
     city_info = CITIES.get(city, {})
-    location_id = city_info.get("openaq_location_id")
-    if not location_id:
+    candidate_loc_ids = []
+    if city_info.get("openaq_location_id"):
+        candidate_loc_ids.append(city_info["openaq_location_id"])
+
+    # Also search nearby OpenAQ v3 locations by coordinates in case ID changed
+    if city_info.get("lat") and city_info.get("lon"):
+        search_resp = _request_with_retry(
+            f"{cfg['base_url']}/locations",
+            params={
+                "coordinates": f"{city_info['lat']},{city_info['lon']}",
+                "radius": 25000,
+                "limit": 5,
+            },
+            headers=headers,
+        )
+        if search_resp is not None:
+            for loc in search_resp.json().get("results", []):
+                lid = loc.get("id")
+                if lid and lid not in candidate_loc_ids:
+                    candidate_loc_ids.append(lid)
+
+    if not candidate_loc_ids:
+        _record_status(city, "OpenAQ v3", "No OpenAQ locations found")
         return None
 
-    # OpenAQ v3: fetch sensors for the location, then pull PM2.5 measurements
-    loc_url = f"{cfg['base_url']}/locations/{location_id}/sensors"
-    loc_resp = _request_with_retry(loc_url, headers=headers)
-    if loc_resp is None:
-        return None
+    for location_id in candidate_loc_ids:
+        loc_url = f"{cfg['base_url']}/locations/{location_id}/sensors"
+        loc_resp = _request_with_retry(loc_url, headers=headers)
+        if loc_resp is None:
+            continue
 
-    try:
-        sensors = loc_resp.json().get("results", [])
-        pm25_sensor_id = None
-        for s in sensors:
-            param = (s.get("parameter") or {}).get("name", "").lower()
-            if param == "pm25":
-                pm25_sensor_id = s.get("id")
-                break
-        if not pm25_sensor_id:
-            return None
+        try:
+            sensors = loc_resp.json().get("results", [])
+            pm25_sensor_id = None
+            for s in sensors:
+                param = (s.get("parameter") or {}).get("name", "").lower()
+                if param == "pm25":
+                    pm25_sensor_id = s.get("id")
+                    break
+            if not pm25_sensor_id:
+                continue
 
-        meas_url = f"{cfg['base_url']}/sensors/{pm25_sensor_id}/measurements"
-        params = {
-            "datetime_from": f"{start_date}T00:00:00Z",
-            "datetime_to": f"{end_date}T23:59:59Z",
-            "limit": 1000,
-        }
-        resp = _request_with_retry(meas_url, params=params, headers=headers)
-        if resp is None:
-            return None
+            meas_url = f"{cfg['base_url']}/sensors/{pm25_sensor_id}/measurements"
+            params = {
+                "datetime_from": f"{start_date}T00:00:00Z",
+                "datetime_to": f"{end_date}T23:59:59Z",
+                "limit": 1000,
+            }
+            resp = _request_with_retry(meas_url, params=params, headers=headers)
+            if resp is None:
+                continue
 
-        results = resp.json().get("results", [])
-        if not results:
-            logger.warning("OpenAQ v3 returned 0 results for %s.", city)
-            return None
+            results = resp.json().get("results", [])
+            if not results:
+                continue
 
-        rows = []
-        for item in results:
-            ts = (item.get("period") or {}).get("datetimeTo", {}).get("utc")
-            val = item.get("value")
-            if ts is not None and val is not None:
-                pm25 = float(val)
-                rows.append(
-                    {
-                        "timestamp": pd.to_datetime(ts, utc=True).tz_convert("Asia/Kolkata").tz_localize(None),
-                        "city": city,
-                        "aqi": round(pm25 * 1.7, 1),
-                        "pm25": round(pm25, 1),
-                        "source": "openaq_v3",
-                    }
-                )
-        df = pd.DataFrame(rows).dropna(subset=["timestamp", "aqi"])
-        return df if not df.empty else None
-    except Exception as exc:
-        logger.warning("Failed parsing OpenAQ v3 response for %s: %s", city, exc)
-        return None
+            rows = []
+            for item in results:
+                ts = (item.get("period") or {}).get("datetimeTo", {}).get("utc")
+                val = item.get("value")
+                if ts is not None and val is not None:
+                    pm25 = float(val)
+                    rows.append(
+                        {
+                            "timestamp": pd.to_datetime(ts, utc=True).tz_convert("Asia/Kolkata").tz_localize(None),
+                            "city": city,
+                            "aqi": round(pm25 * 1.7, 1),
+                            "pm25": round(pm25, 1),
+                            "source": "openaq_v3",
+                        }
+                    )
+            df = pd.DataFrame(rows).dropna(subset=["timestamp", "aqi"])
+            if not df.empty:
+                _record_status(city, "OpenAQ v3", f"OK ({len(df)} rows from location {location_id})")
+                return df
+        except Exception as exc:
+            logger.warning("Failed parsing OpenAQ v3 response for %s: %s", city, exc)
+
+    _record_status(city, "OpenAQ v3", "0 measurements in date range")
+    return None
 
 
 def _fetch_openweather_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
@@ -306,6 +345,7 @@ def _fetch_openweather_aqi(city: str, start_date: str, end_date: str) -> Optiona
     api_key = _get_secret(cfg["env_var"])
     city_info = CITIES.get(city)
     if not api_key or not city_info:
+        _record_status(city, "OWM Air", "Skipped (OPENWEATHER_API_KEY not set)")
         return None
 
     start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
@@ -319,6 +359,7 @@ def _fetch_openweather_aqi(city: str, start_date: str, end_date: str) -> Optiona
     }
     resp = _request_with_retry(cfg["air_pollution_url"], params=params)
     if resp is None:
+        _record_status(city, "OWM Air", "Request failed / unauthorized")
         return None
 
     try:
@@ -330,7 +371,6 @@ def _fetch_openweather_aqi(city: str, start_date: str, end_date: str) -> Optiona
             pm25 = comps.get("pm2_5")
             pm10 = comps.get("pm10")
             if pm25 is not None:
-                # Approximate Indian CPCB AQI from PM2.5 when station AQI isn't provided
                 approx_aqi = round(float(pm25) * 1.7, 1)
                 rows.append(
                     {
@@ -343,8 +383,13 @@ def _fetch_openweather_aqi(city: str, start_date: str, end_date: str) -> Optiona
                     }
                 )
         df = pd.DataFrame(rows).dropna(subset=["timestamp", "aqi"])
-        return df if not df.empty else None
+        if not df.empty:
+            _record_status(city, "OWM Air", f"OK ({len(df)} rows)")
+            return df
+        _record_status(city, "OWM Air", "0 rows returned")
+        return None
     except Exception as exc:
+        _record_status(city, "OWM Air", f"Parse error: {exc}")
         logger.warning("Failed parsing OpenWeatherMap Air Pollution response for %s: %s", city, exc)
         return None
 

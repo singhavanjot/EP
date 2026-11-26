@@ -15,7 +15,7 @@ from src.correlation_analysis import (
     partial_correlation_controlling_weather,
 )
 from src.data_cleaning import run_cleaning_pipeline
-from src.data_ingestion import fetch_aqi_data, fetch_weather_data
+from src.data_ingestion import fetch_aqi_data, fetch_weather_data, get_ingestion_status
 from src.db import get_last_updated, save_city_data
 from src.forecasting import predict_next_hours, train_forecast_model
 from src.health_advisory import aqi_to_category, get_category_color, get_recommended_action
@@ -291,6 +291,12 @@ def main() -> None:
         f"**AQI Source:** `{aqi_source}`\n\n"
         f"**Weather Source:** `{wx_source}`"
     )
+
+    diag = get_ingestion_status(primary_city)
+    if diag:
+        with st.sidebar.expander("API Diagnostics"):
+            for provider, msg in diag.items():
+                st.caption(f"**{provider}:** {msg}")
 
     # 2. Current AQI + Health Advisory Card
     _render_advisory_cards(city_frames)
