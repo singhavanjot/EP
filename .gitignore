@@ -1,0 +1,24 @@
+# Environment variables
+.env
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Raw API data & cached models/databases
+data/raw/
+data/processed/models/
+*.db
+*.sqlite
+*.pkl
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
