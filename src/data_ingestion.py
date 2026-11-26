@@ -65,6 +65,9 @@ def _request_with_retry(
             )
             if response.status_code == 200:
                 return response
+            if response.status_code in (401, 403, 404, 410):
+                logger.warning("Permanent HTTP %d from %s; skipping retries.", response.status_code, url)
+                return None
             if response.status_code == 429:
                 logger.warning("Rate-limited (429) on %s (attempt %d/%d).", url, attempt, MAX_RETRIES)
             else:
@@ -230,7 +233,7 @@ def _fetch_cpcb_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.Da
 
 
 def _fetch_openaq_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-    """Fallback AQI pull from the OpenAQ v2 API."""
+    """Fallback AQI pull from the OpenAQ v3 API."""
     cfg = API_CONFIG["openaq"]
     api_key = _get_secret(cfg["env_var"])
     if not api_key:
@@ -239,53 +242,115 @@ def _fetch_openaq_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.
     headers = {"X-API-Key": api_key}
 
     city_info = CITIES.get(city, {})
-    params: Dict[str, Any] = {
-        "date_from": f"{start_date}T00:00:00Z",
-        "date_to": f"{end_date}T23:59:59Z",
-        "parameter": "pm25",
-        "limit": 1000,
-    }
-    if city_info.get("openaq_location_id"):
-        params["location_id"] = city_info["openaq_location_id"]
-    else:
-        params["city"] = city
+    location_id = city_info.get("openaq_location_id")
+    if not location_id:
+        return None
 
-    resp = _request_with_retry(cfg["base_url"], params=params, headers=headers)
-    if resp is None:
+    # OpenAQ v3: fetch sensors for the location, then pull PM2.5 measurements
+    loc_url = f"{cfg['base_url']}/locations/{location_id}/sensors"
+    loc_resp = _request_with_retry(loc_url, headers=headers)
+    if loc_resp is None:
         return None
 
     try:
+        sensors = loc_resp.json().get("results", [])
+        pm25_sensor_id = None
+        for s in sensors:
+            param = (s.get("parameter") or {}).get("name", "").lower()
+            if param == "pm25":
+                pm25_sensor_id = s.get("id")
+                break
+        if not pm25_sensor_id:
+            return None
+
+        meas_url = f"{cfg['base_url']}/sensors/{pm25_sensor_id}/measurements"
+        params = {
+            "datetime_from": f"{start_date}T00:00:00Z",
+            "datetime_to": f"{end_date}T23:59:59Z",
+            "limit": 1000,
+        }
+        resp = _request_with_retry(meas_url, params=params, headers=headers)
+        if resp is None:
+            return None
+
         results = resp.json().get("results", [])
         if not results:
-            logger.warning("OpenAQ returned 0 results for %s.", city)
+            logger.warning("OpenAQ v3 returned 0 results for %s.", city)
             return None
 
         rows = []
         for item in results:
-            ts = item.get("date", {}).get("utc")
+            ts = (item.get("period") or {}).get("datetimeTo", {}).get("utc")
             val = item.get("value")
             if ts is not None and val is not None:
-                # Approximate Indian AQI from PM2.5 when raw AQI is unavailable
                 pm25 = float(val)
-                approx_aqi = pm25 * 1.7
                 rows.append(
                     {
                         "timestamp": pd.to_datetime(ts, utc=True).tz_convert("Asia/Kolkata").tz_localize(None),
                         "city": city,
-                        "aqi": round(approx_aqi, 1),
+                        "aqi": round(pm25 * 1.7, 1),
                         "pm25": round(pm25, 1),
-                        "source": "openaq",
+                        "source": "openaq_v3",
                     }
                 )
         df = pd.DataFrame(rows).dropna(subset=["timestamp", "aqi"])
         return df if not df.empty else None
     except Exception as exc:
-        logger.warning("Failed parsing OpenAQ response for %s: %s", city, exc)
+        logger.warning("Failed parsing OpenAQ v3 response for %s: %s", city, exc)
+        return None
+
+
+def _fetch_openweather_aqi(city: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+    """Free-tier OpenWeatherMap Air Pollution History fallback."""
+    cfg = API_CONFIG["openweather"]
+    api_key = _get_secret(cfg["env_var"])
+    city_info = CITIES.get(city)
+    if not api_key or not city_info:
+        return None
+
+    start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
+    end_ts = int(datetime.strptime(end_date, "%Y-%m-%d").timestamp()) + 86399
+    params = {
+        "lat": city_info["lat"],
+        "lon": city_info["lon"],
+        "start": start_ts,
+        "end": end_ts,
+        "appid": api_key,
+    }
+    resp = _request_with_retry(cfg["air_pollution_url"], params=params)
+    if resp is None:
+        return None
+
+    try:
+        items = resp.json().get("list", [])
+        rows = []
+        for item in items:
+            dt = pd.to_datetime(item.get("dt"), unit="s", utc=True).tz_convert("Asia/Kolkata").tz_localize(None)
+            comps = item.get("components", {})
+            pm25 = comps.get("pm2_5")
+            pm10 = comps.get("pm10")
+            if pm25 is not None:
+                # Approximate Indian CPCB AQI from PM2.5 when station AQI isn't provided
+                approx_aqi = round(float(pm25) * 1.7, 1)
+                rows.append(
+                    {
+                        "timestamp": dt,
+                        "city": city,
+                        "aqi": approx_aqi,
+                        "pm25": round(float(pm25), 1),
+                        "pm10": round(float(pm10), 1) if pm10 is not None else None,
+                        "source": "openweathermap_air",
+                    }
+                )
+        df = pd.DataFrame(rows).dropna(subset=["timestamp", "aqi"])
+        return df if not df.empty else None
+    except Exception as exc:
+        logger.warning("Failed parsing OpenWeatherMap Air Pollution response for %s: %s", city, exc)
         return None
 
 
 def fetch_aqi_data(city: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """Fetch historical AQI data for a city with CPCB -> OpenAQ -> synthetic fallback.
+    """Fetch historical AQI data with CPCB -> OpenAQ v3 -> OWM Air -> synthetic fallback.
 
     Args:
         city: Target city name.
@@ -301,6 +366,10 @@ def fetch_aqi_data(city: str, start_date: str, end_date: str) -> pd.DataFrame:
     if df is None:
         df = _fetch_openaq_aqi(city, start_date, end_date)
         source = "openaq"
+
+    if df is None:
+        df = _fetch_openweather_aqi(city, start_date, end_date)
+        source = "openweathermap_air"
 
     if df is None:
         logger.info("Using synthetic AQI fallback for %s (%s to %s).", city, start_date, end_date)
@@ -366,7 +435,39 @@ def fetch_weather_data(city: str, start_date: str, end_date: str) -> pd.DataFram
             except Exception as exc:
                 logger.warning("Failed parsing OpenWeatherMap response for %s: %s", city, exc)
     else:
-        logger.info("OpenWeatherMap key not configured; using synthetic weather fallback for %s.", city)
+        logger.info("OpenWeatherMap key not configured; trying Open-Meteo archive fallback for %s.", city)
+
+    # Free Open-Meteo historical weather fallback (works without API key or on OWM free tier)
+    if city_info:
+        om_params = {
+            "latitude": city_info["lat"],
+            "longitude": city_info["lon"],
+            "start_date": start_date,
+            "end_date": end_date,
+            "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m",
+            "timezone": "Asia/Kolkata",
+        }
+        om_resp = _request_with_retry(API_CONFIG["openmeteo"]["base_url"], params=om_params)
+        if om_resp is not None:
+            try:
+                hourly = om_resp.json().get("hourly", {})
+                times = hourly.get("time", [])
+                if times:
+                    om_df = pd.DataFrame(
+                        {
+                            "timestamp": pd.to_datetime(times),
+                            "city": city,
+                            "temperature": hourly.get("temperature_2m"),
+                            "humidity": hourly.get("relative_humidity_2m"),
+                            "wind_speed": hourly.get("wind_speed_10m"),
+                            "source": "openmeteo",
+                        }
+                    ).dropna(subset=["timestamp"])
+                    if not om_df.empty:
+                        _save_raw_csv(om_df, city, "weather_openmeteo", start_date, end_date)
+                        return om_df
+            except Exception as exc:
+                logger.warning("Failed parsing Open-Meteo response for %s: %s", city, exc)
 
     synth = generate_synthetic_data(city, start_date, end_date)
     weather_df = synth[["timestamp", "city", "temperature", "humidity", "wind_speed", "source"]].copy()

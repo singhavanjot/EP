@@ -71,12 +71,16 @@ API_CONFIG: Dict[str, Dict[str, str]] = {
         "env_var": "CPCB_API_KEY",
     },
     "openaq": {
-        "base_url": "https://api.openaq.org/v2/measurements",
+        "base_url": "https://api.openaq.org/v3",
         "env_var": "OPENAQ_API_KEY",
     },
     "openweather": {
         "base_url": "https://history.openweathermap.org/data/2.5/history/city",
+        "air_pollution_url": "https://api.openweathermap.org/data/2.5/air_pollution/history",
         "env_var": "OPENWEATHER_API_KEY",
+    },
+    "openmeteo": {
+        "base_url": "https://archive-api.open-meteo.com/v1/archive",
     },
 }
 
