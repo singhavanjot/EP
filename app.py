@@ -29,30 +29,29 @@ st.set_page_config(
 
 
 def _inject_atmospheric_theme() -> None:
-    """Apply 'The air, made visible' dark atmospheric design system to Streamlit."""
+    """Apply a crisp white, grey, and black editorial theme to Streamlit."""
     st.markdown(
         """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
         :root {
-            --as-bg: #070B14;
-            --as-surface: #0E1524;
-            --as-border: rgba(255, 255, 255, 0.08);
-            --as-text: #E8EDF7;
-            --as-muted: #8A96AD;
-            --as-accent: #4CC9F0;
+            --as-bg: #FFFFFF;
+            --as-surface: #F5F5F5;
+            --as-border: #E2E2E2;
+            --as-text: #111111;
+            --as-muted: #5C5C5C;
+            --as-accent: #111111;
         }
 
         .stApp {
             background-color: var(--as-bg);
-            background-image: radial-gradient(ellipse 80% 45% at 65% 0%, rgba(76, 201, 240, 0.09), transparent 70%);
             color: var(--as-text);
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
         }
 
         [data-testid="stSidebar"] {
-            background-color: #090E1A;
+            background-color: #F4F4F4;
             border-right: 1px solid var(--as-border);
         }
 
@@ -64,19 +63,19 @@ def _inject_atmospheric_theme() -> None:
         }
 
         h1 { font-size: clamp(2.4rem, 4.2vw, 3.6rem) !important; line-height: 1.06 !important; }
-        h2, h3 { color: var(--as-text) !important; }
+        h2, h3, p, label { color: var(--as-text) !important; }
 
         [data-testid="stMetric"] {
             background: var(--as-surface);
             border: 1px solid var(--as-border);
-            border-radius: 12px;
+            border-radius: 10px;
             padding: 14px 16px;
         }
 
         [data-testid="stMetricValue"] {
             font-family: 'JetBrains Mono', ui-monospace, monospace !important;
             font-variant-numeric: tabular-nums;
-            color: var(--as-accent) !important;
+            color: #111111 !important;
         }
 
         .as-eyebrow {
@@ -87,7 +86,7 @@ def _inject_atmospheric_theme() -> None:
             font-size: 0.74rem;
             letter-spacing: 0.12em;
             text-transform: uppercase;
-            color: var(--as-accent);
+            color: #5C5C5C;
             margin-bottom: 6px;
         }
 
@@ -95,24 +94,24 @@ def _inject_atmospheric_theme() -> None:
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: var(--as-accent);
-            box-shadow: 0 0 10px var(--as-accent);
+            background: #111111;
             display: inline-block;
         }
 
         .as-subhead {
-            color: var(--as-muted);
+            color: var(--as-muted) !important;
             font-size: 1.02rem;
             max-width: 64ch;
             margin-bottom: 18px;
         }
 
         .as-card {
-            background: var(--as-surface);
-            border: 1px solid var(--as-border);
-            border-radius: 14px;
+            background: #FFFFFF;
+            border: 1px solid #DCDCDC;
+            border-radius: 12px;
             padding: 18px 20px;
             height: 100%;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
         }
 
         .as-mono {
@@ -126,16 +125,16 @@ def _inject_atmospheric_theme() -> None:
 
 
 def _style_plotly(fig: go.Figure, height: int = 400) -> go.Figure:
-    """Apply consistent atmospheric dark styling to Plotly figures."""
+    """Apply consistent white, grey, and black styling to Plotly figures."""
     fig.update_layout(
-        template="plotly_dark",
+        template="plotly_white",
         height=height,
-        paper_bgcolor="rgba(14, 21, 36, 0.85)",
-        plot_bgcolor="rgba(7, 11, 20, 0.55)",
-        font=dict(family="Inter, sans-serif", color="#E8EDF7"),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FAFAFA",
+        font=dict(family="Inter, sans-serif", color="#111111"),
         margin=dict(l=24, r=24, t=44, b=28),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.08)"),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.08)"),
+        xaxis=dict(gridcolor="#EAEAEA", zerolinecolor="#D4D4D4"),
+        yaxis=dict(gridcolor="#EAEAEA", zerolinecolor="#D4D4D4"),
     )
     return fig
 
@@ -178,25 +177,25 @@ def _render_advisory_cards(city_frames: Dict[str, pd.DataFrame]) -> None:
         with col:
             st.markdown(
                 f"""
-                <div class="as-card" style="border-top: 3px solid {color};">
+                <div class="as-card" style="border-top: 3px solid #111111;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-weight:600; font-size:1.05rem;">{city}</span>
-                        <span class="as-mono" style="font-size:0.72rem; color:#8A96AD; border:1px solid rgba(255,255,255,0.1); padding:2px 8px; border-radius:999px;">{source_lbl}</span>
+                        <span style="font-weight:600; font-size:1.05rem; color:#111111;">{city}</span>
+                        <span class="as-mono" style="font-size:0.72rem; color:#5C5C5C; border:1px solid #D4D4D4; background:#F5F5F5; padding:2px 8px; border-radius:999px;">{source_lbl}</span>
                     </div>
                     <div style="display:flex; flex-direction:column; align-items:center; margin:8px 0 6px;">
                         <svg width="190" height="108" viewBox="0 0 200 112" aria-label="{city} AQI gauge">
-                            <path d="M20,100 A80,80 0 0,1 180,100" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="12" stroke-linecap="round" />
-                            <path d="M20,100 A80,80 0 0,1 180,100" fill="none" stroke="{color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="{dash_offset}" />
+                            <path d="M20,100 A80,80 0 0,1 180,100" fill="none" stroke="#E5E5E5" stroke-width="12" stroke-linecap="round" />
+                            <path d="M20,100 A80,80 0 0,1 180,100" fill="none" stroke="#262626" stroke-width="12" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="{dash_offset}" />
                             <g transform="rotate({angle_deg} 100 100)">
-                                <line x1="100" y1="100" x2="100" y2="30" stroke="#E8EDF7" stroke-width="2.2" stroke-linecap="round" />
-                                <circle cx="100" cy="100" r="5" fill="#E8EDF7" />
+                                <line x1="100" y1="100" x2="100" y2="30" stroke="#111111" stroke-width="2.2" stroke-linecap="round" />
+                                <circle cx="100" cy="100" r="5" fill="#111111" />
                             </g>
                         </svg>
-                        <div class="as-mono" style="font-size:2.15rem; font-weight:600; line-height:1; margin-top:-10px;">{aqi_val:.0f} <span style="font-size:0.9rem; color:#8A96AD;">AQI</span></div>
-                        <div style="font-weight:600; color:{color}; margin-top:4px;">{category}</div>
-                        <div class="as-mono" style="font-size:0.72rem; color:#8A96AD; margin-top:2px;">Latest: {ts_str}</div>
+                        <div class="as-mono" style="font-size:2.15rem; font-weight:600; line-height:1; margin-top:-10px; color:#111111;">{aqi_val:.0f} <span style="font-size:0.9rem; color:#5C5C5C;">AQI</span></div>
+                        <div style="font-weight:600; color:#111111; margin-top:4px;">{category}</div>
+                        <div class="as-mono" style="font-size:0.72rem; color:#5C5C5C; margin-top:2px;">Latest: {ts_str}</div>
                     </div>
-                    <div style="font-size:0.86rem; color:#8A96AD; line-height:1.45; border-top:1px solid rgba(255,255,255,0.08); padding-top:10px;">
+                    <div style="font-size:0.86rem; color:#525252; line-height:1.45; border-top:1px solid #E5E5E5; padding-top:10px;">
                         {advisory}
                     </div>
                 </div>
@@ -217,7 +216,7 @@ def _render_historical_trend(city_frames: Dict[str, pd.DataFrame], primary_city:
         x="timestamp",
         y="aqi",
         color="city",
-        color_discrete_sequence=["#4CC9F0", "#8BC34A", "#FFD21F"],
+        color_discrete_sequence=["#111111", "#666666", "#A3A3A3"],
         labels={"timestamp": "Timestamp", "aqi": "AQI", "city": "City"},
         title="Hourly AQI Comparison",
     )
@@ -231,11 +230,11 @@ def _render_historical_trend(city_frames: Dict[str, pd.DataFrame], primary_city:
                 y=peak_pts["aqi"],
                 mode="markers",
                 name=f"{primary_city} Peak Hours",
-                marker=dict(size=5, color="#FF8A00", opacity=0.75, symbol="circle"),
+                marker=dict(size=5, color="#111111", opacity=0.75, symbol="circle"),
             )
         )
 
-    fig.add_hline(y=201, line_dash="dash", line_color="#FF8A00", annotation_text="Poor / Alert Threshold (201)")
+    fig.add_hline(y=201, line_dash="dash", line_color="#525252", annotation_text="Poor / Alert Threshold (201)")
     _style_plotly(fig, height=420)
     fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     st.plotly_chart(fig, width="stretch")
@@ -287,7 +286,7 @@ def _render_forecast_panel(primary_city: str, df: pd.DataFrame, horizon_hours: i
             y=recent_tail["aqi"],
             mode="lines",
             name="Recent Observed AQI",
-            line=dict(color="#4CC9F0", width=2.2),
+            line=dict(color="#111111", width=2.2),
         )
     )
     fig.add_trace(
@@ -305,7 +304,7 @@ def _render_forecast_panel(primary_city: str, df: pd.DataFrame, horizon_hours: i
             y=forecast_df["yhat_lower"],
             mode="lines",
             fill="tonexty",
-            fillcolor="rgba(255, 138, 0, 0.18)",
+            fillcolor="rgba(0, 0, 0, 0.10)",
             line=dict(width=0),
             name="Confidence Band",
         )
@@ -316,7 +315,7 @@ def _render_forecast_panel(primary_city: str, df: pd.DataFrame, horizon_hours: i
             y=forecast_df["yhat"],
             mode="lines+markers",
             name="Forecasted AQI",
-            line=dict(color="#FF8A00", width=2.5),
+            line=dict(color="#525252", width=2.5, dash="dash"),
         )
     )
     _style_plotly(fig, height=380)
@@ -342,7 +341,7 @@ def _render_seasonal_heatmap(primary_city: str, df: pd.DataFrame) -> None:
     fig = px.imshow(
         pivot,
         labels=dict(x="Hour of Day", y="Day of Week", color="Avg AQI"),
-        color_continuous_scale="YlOrRd",
+        color_continuous_scale="Greys",
         aspect="auto",
     )
     _style_plotly(fig, height=360)
@@ -379,20 +378,20 @@ def _render_project_info_tabs() -> None:
 
     with tab2:
         bands = [
-            ("Good (0–50)", "#00B050", "Minimal impact; safe for normal outdoor activity."),
-            ("Satisfactory (51–100)", "#8BC34A", "Minor breathing discomfort to sensitive people."),
-            ("Moderate (101–200)", "#FFD21F", "Discomfort for lung/heart patients, children, older adults."),
-            ("Poor (201–300)", "#FF8A00", "Breathing discomfort on prolonged exposure; limit outdoor exertion."),
-            ("Very Poor (301–400)", "#E53935", "Respiratory illness risk; keep windows closed."),
-            ("Severe (401+)", "#8E1B3A", "Health emergency; stay indoors and avoid physical exertion."),
+            ("Good (0–50)", "#D4D4D4", "Minimal impact; safe for normal outdoor activity."),
+            ("Satisfactory (51–100)", "#A3A3A3", "Minor breathing discomfort to sensitive people."),
+            ("Moderate (101–200)", "#737373", "Discomfort for lung/heart patients, children, older adults."),
+            ("Poor (201–300)", "#525252", "Breathing discomfort on prolonged exposure; limit outdoor exertion."),
+            ("Very Poor (301–400)", "#262626", "Respiratory illness risk; keep windows closed."),
+            ("Severe (401+)", "#111111", "Health emergency; stay indoors and avoid physical exertion."),
         ]
         cols = st.columns(3)
         for idx, (label, color, desc) in enumerate(bands):
             with cols[idx % 3]:
                 st.markdown(
                     f'<div class="as-card" style="border-left:4px solid {color}; margin-bottom:10px;">'
-                    f'<strong style="color:{color};">{label}</strong>'
-                    f'<div style="font-size:0.84rem; color:#8A96AD; margin-top:4px;">{desc}</div></div>',
+                    f'<strong style="color:#111111;">{label}</strong>'
+                    f'<div style="font-size:0.84rem; color:#5C5C5C; margin-top:4px;">{desc}</div></div>',
                     unsafe_allow_html=True,
                 )
 
