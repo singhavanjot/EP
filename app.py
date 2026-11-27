@@ -22,10 +22,122 @@ from src.health_advisory import aqi_to_category, get_category_color, get_recomme
 from src.report_export import generate_summary_report
 
 st.set_page_config(
-    page_title="AirSense — Multi-City AQI Dashboard",
+    page_title="AirSense — The Air, Made Visible",
     page_icon="🌫️",
     layout="wide",
 )
+
+
+def _inject_atmospheric_theme() -> None:
+    """Apply 'The air, made visible' dark atmospheric design system to Streamlit."""
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+        :root {
+            --as-bg: #070B14;
+            --as-surface: #0E1524;
+            --as-border: rgba(255, 255, 255, 0.08);
+            --as-text: #E8EDF7;
+            --as-muted: #8A96AD;
+            --as-accent: #4CC9F0;
+        }
+
+        .stApp {
+            background-color: var(--as-bg);
+            background-image: radial-gradient(ellipse 80% 45% at 65% 0%, rgba(76, 201, 240, 0.09), transparent 70%);
+            color: var(--as-text);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        [data-testid="stSidebar"] {
+            background-color: #090E1A;
+            border-right: 1px solid var(--as-border);
+        }
+
+        h1, h2, .as-display {
+            font-family: 'Instrument Serif', Georgia, serif !important;
+            font-weight: 400 !important;
+            letter-spacing: -0.02em !important;
+            color: var(--as-text) !important;
+        }
+
+        h1 { font-size: clamp(2.4rem, 4.2vw, 3.6rem) !important; line-height: 1.06 !important; }
+        h2, h3 { color: var(--as-text) !important; }
+
+        [data-testid="stMetric"] {
+            background: var(--as-surface);
+            border: 1px solid var(--as-border);
+            border-radius: 12px;
+            padding: 14px 16px;
+        }
+
+        [data-testid="stMetricValue"] {
+            font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+            font-variant-numeric: tabular-nums;
+            color: var(--as-accent) !important;
+        }
+
+        .as-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.74rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--as-accent);
+            margin-bottom: 6px;
+        }
+
+        .as-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--as-accent);
+            box-shadow: 0 0 10px var(--as-accent);
+            display: inline-block;
+        }
+
+        .as-subhead {
+            color: var(--as-muted);
+            font-size: 1.02rem;
+            max-width: 64ch;
+            margin-bottom: 18px;
+        }
+
+        .as-card {
+            background: var(--as-surface);
+            border: 1px solid var(--as-border);
+            border-radius: 14px;
+            padding: 18px 20px;
+            height: 100%;
+        }
+
+        .as-mono {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _style_plotly(fig: go.Figure, height: int = 400) -> go.Figure:
+    """Apply consistent atmospheric dark styling to Plotly figures."""
+    fig.update_layout(
+        template="plotly_dark",
+        height=height,
+        paper_bgcolor="rgba(14, 21, 36, 0.85)",
+        plot_bgcolor="rgba(7, 11, 20, 0.55)",
+        font=dict(family="Inter, sans-serif", color="#E8EDF7"),
+        margin=dict(l=24, r=24, t=44, b=28),
+        xaxis=dict(gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.08)"),
+        yaxis=dict(gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.08)"),
+    )
+    return fig
 
 
 @st.cache_data(show_spinner=False)
@@ -42,12 +154,12 @@ def load_city_pipeline(city: str, start_date: str, end_date: str) -> Tuple[pd.Da
 @st.cache_resource(show_spinner=False)
 def get_cached_model(city: str, df_hash: int, df: pd.DataFrame):
     """Train or load a cached Prophet model for a city."""
-    _ = df_hash  # cache key invalidation when data changes
+    _ = df_hash
     return train_forecast_model(df, city=city, use_cache=True)
 
 
 def _render_advisory_cards(city_frames: Dict[str, pd.DataFrame]) -> None:
-    """Render color-coded Current AQI + Health Advisory cards for selected cities."""
+    """Render semi-circular AQI gauge cards with CPCB health advisories."""
     st.subheader("Current AQI & Health Advisory")
     cols = st.columns(len(city_frames))
     for col, (city, df) in zip(cols, city_frames.items()):
@@ -57,17 +169,36 @@ def _render_advisory_cards(city_frames: Dict[str, pd.DataFrame]) -> None:
         color = get_category_color(category)
         advisory = get_recommended_action(category)
         ts_str = pd.to_datetime(latest["timestamp"]).strftime("%Y-%m-%d %H:%M")
+        source_lbl = str(latest.get("source", "batch"))
 
-        text_color = "#111111" if category in ("Satisfactory", "Moderate", "Poor") else "#FFFFFF"
+        pct = min(1.0, max(0.0, aqi_val / 450.0))
+        dash_offset = round(251.2 * (1.0 - pct), 1)
+        angle_deg = round(-90.0 + pct * 180.0, 1)
+
         with col:
             st.markdown(
                 f"""
-                <div style="background-color:{color}; color:{text_color}; padding:16px; border-radius:10px;">
-                    <div style="font-size:1.1rem; font-weight:700;">{city}</div>
-                    <div style="font-size:2.4rem; font-weight:800; margin:4px 0;">{aqi_val:.0f} AQI</div>
-                    <div style="font-size:1.05rem; font-weight:600;">{category}</div>
-                    <div style="font-size:0.8rem; opacity:0.85; margin-bottom:8px;">Latest reading: {ts_str}</div>
-                    <div style="font-size:0.9rem;">{advisory}</div>
+                <div class="as-card" style="border-top: 3px solid {color};">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:600; font-size:1.05rem;">{city}</span>
+                        <span class="as-mono" style="font-size:0.72rem; color:#8A96AD; border:1px solid rgba(255,255,255,0.1); padding:2px 8px; border-radius:999px;">{source_lbl}</span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; align-items:center; margin:8px 0 6px;">
+                        <svg width="190" height="108" viewBox="0 0 200 112" aria-label="{city} AQI gauge">
+                            <path d="M20,100 A80,80 0 0,1 180,100" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="12" stroke-linecap="round" />
+                            <path d="M20,100 A80,80 0 0,1 180,100" fill="none" stroke="{color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="{dash_offset}" />
+                            <g transform="rotate({angle_deg} 100 100)">
+                                <line x1="100" y1="100" x2="100" y2="30" stroke="#E8EDF7" stroke-width="2.2" stroke-linecap="round" />
+                                <circle cx="100" cy="100" r="5" fill="#E8EDF7" />
+                            </g>
+                        </svg>
+                        <div class="as-mono" style="font-size:2.15rem; font-weight:600; line-height:1; margin-top:-10px;">{aqi_val:.0f} <span style="font-size:0.9rem; color:#8A96AD;">AQI</span></div>
+                        <div style="font-weight:600; color:{color}; margin-top:4px;">{category}</div>
+                        <div class="as-mono" style="font-size:0.72rem; color:#8A96AD; margin-top:2px;">Latest: {ts_str}</div>
+                    </div>
+                    <div style="font-size:0.86rem; color:#8A96AD; line-height:1.45; border-top:1px solid rgba(255,255,255,0.08); padding-top:10px;">
+                        {advisory}
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -86,11 +217,11 @@ def _render_historical_trend(city_frames: Dict[str, pd.DataFrame], primary_city:
         x="timestamp",
         y="aqi",
         color="city",
+        color_discrete_sequence=["#4CC9F0", "#8BC34A", "#FFD21F"],
         labels={"timestamp": "Timestamp", "aqi": "AQI", "city": "City"},
         title="Hourly AQI Comparison",
     )
 
-    # Overlay peak-hour markers for the primary city
     primary_df = city_frames[primary_city]
     peak_pts = primary_df[primary_df["is_peak_hour"]]
     if not peak_pts.empty:
@@ -100,12 +231,13 @@ def _render_historical_trend(city_frames: Dict[str, pd.DataFrame], primary_city:
                 y=peak_pts["aqi"],
                 mode="markers",
                 name=f"{primary_city} Peak Hours",
-                marker=dict(size=5, color="rgba(220, 38, 38, 0.55)", symbol="circle"),
+                marker=dict(size=5, color="#FF8A00", opacity=0.75, symbol="circle"),
             )
         )
 
-    fig.add_hline(y=201, line_dash="dash", line_color="orange", annotation_text="Poor / Alert Threshold (201)")
-    fig.update_layout(height=420, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    fig.add_hline(y=201, line_dash="dash", line_color="#FF8A00", annotation_text="Poor / Alert Threshold (201)")
+    _style_plotly(fig, height=420)
+    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     st.plotly_chart(fig, width="stretch")
 
 
@@ -129,6 +261,7 @@ def _render_correlation_panel(primary_city: str, df: pd.DataFrame):
 
     st.info(f"**Statistical Comparison:** {stats['interpretation']}")
     st.info(f"**Controlling for Weather:** {partial_corr['interpretation']}")
+    st.caption("Methodology note: Peak traffic is approximated by weekday rush-hour windows (8–10 AM, 5–8 PM), not live GPS.")
     return stats, partial_corr
 
 
@@ -154,7 +287,7 @@ def _render_forecast_panel(primary_city: str, df: pd.DataFrame, horizon_hours: i
             y=recent_tail["aqi"],
             mode="lines",
             name="Recent Observed AQI",
-            line=dict(color="#1f77b4", width=2),
+            line=dict(color="#4CC9F0", width=2.2),
         )
     )
     fig.add_trace(
@@ -172,7 +305,7 @@ def _render_forecast_panel(primary_city: str, df: pd.DataFrame, horizon_hours: i
             y=forecast_df["yhat_lower"],
             mode="lines",
             fill="tonexty",
-            fillcolor="rgba(255, 127, 14, 0.2)",
+            fillcolor="rgba(255, 138, 0, 0.18)",
             line=dict(width=0),
             name="Confidence Band",
         )
@@ -183,10 +316,11 @@ def _render_forecast_panel(primary_city: str, df: pd.DataFrame, horizon_hours: i
             y=forecast_df["yhat"],
             mode="lines+markers",
             name="Forecasted AQI",
-            line=dict(color="#ff7f0e", width=2.5),
+            line=dict(color="#FF8A00", width=2.5),
         )
     )
-    fig.update_layout(height=380, xaxis_title="Timestamp", yaxis_title="AQI")
+    _style_plotly(fig, height=380)
+    fig.update_layout(xaxis_title="Timestamp", yaxis_title="AQI")
     st.plotly_chart(fig, width="stretch")
     return forecast_df
 
@@ -211,7 +345,7 @@ def _render_seasonal_heatmap(primary_city: str, df: pd.DataFrame) -> None:
         color_continuous_scale="YlOrRd",
         aspect="auto",
     )
-    fig.update_layout(height=360)
+    _style_plotly(fig, height=360)
     st.plotly_chart(fig, width="stretch")
 
 
@@ -230,9 +364,63 @@ def _render_alerts_panel(primary_city: str, df: pd.DataFrame):
     return alerts_summary
 
 
+def _render_project_info_tabs() -> None:
+    """Render concise CPCB scale, architecture, and Chitkara team tabs."""
+    st.markdown("---")
+    st.subheader("About AirSense — Architecture, CPCB Scale & Team")
+    tab1, tab2, tab3 = st.tabs(["Pipeline & Tech Stack", "CPCB 6-Band Scale", "Team & References"])
+
+    with tab1:
+        st.markdown(
+            "**Pipeline:** `CPCB / OpenAQ v3 / OWM / Open-Meteo` → `IQR Cleaning & Peak Tagging (Pandas, SQLite)` "
+            "→ `Weather-Controlled Correlation (SciPy, Scikit-learn)` → `24h Prophet Forecast` → `CPCB Advisories & Alerts`"
+        )
+        st.caption("Stack: Python 3.10+, Pandas, NumPy, SciPy, Scikit-learn, Prophet, Plotly, Streamlit, SQLite, pytest.")
+
+    with tab2:
+        bands = [
+            ("Good (0–50)", "#00B050", "Minimal impact; safe for normal outdoor activity."),
+            ("Satisfactory (51–100)", "#8BC34A", "Minor breathing discomfort to sensitive people."),
+            ("Moderate (101–200)", "#FFD21F", "Discomfort for lung/heart patients, children, older adults."),
+            ("Poor (201–300)", "#FF8A00", "Breathing discomfort on prolonged exposure; limit outdoor exertion."),
+            ("Very Poor (301–400)", "#E53935", "Respiratory illness risk; keep windows closed."),
+            ("Severe (401+)", "#8E1B3A", "Health emergency; stay indoors and avoid physical exertion."),
+        ]
+        cols = st.columns(3)
+        for idx, (label, color, desc) in enumerate(bands):
+            with cols[idx % 3]:
+                st.markdown(
+                    f'<div class="as-card" style="border-left:4px solid {color}; margin-bottom:10px;">'
+                    f'<strong style="color:{color};">{label}</strong>'
+                    f'<div style="font-size:0.84rem; color:#8A96AD; margin-top:4px;">{desc}</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+    with tab3:
+        st.markdown(
+            "**B.E. CSE Exploratory Project — Chitkara University, Punjab**\n\n"
+            "- **Avanjot Singh** (`2310991800`) — Data Engineering\n"
+            "- **Devarsh Bajaj** (`2310991814`) — Correlation Analysis & Forecasting\n"
+            "- **Akshat Goel** (`2310990355`) — Health Advisory, Alerts & Testing\n"
+            "- **Agrim Gupta** (`2310990331`) — Dashboard & Visualization\n\n"
+            "References: Sidhu et al. (2024), Natarajan et al. (2024), Liu et al. (2018), "
+            "Taylor & Letham (2018, Prophet), Schneider (2003), CPCB, OpenAQ, OpenWeatherMap, Scikit-learn, Streamlit."
+        )
+
+
 def main() -> None:
     """Run the AirSense Streamlit dashboard."""
-    st.title("AirSense — Multi-City Air Quality & Traffic-Window Dashboard")
+    _inject_atmospheric_theme()
+    st.markdown(
+        '<div class="as-eyebrow"><span class="as-dot"></span>AirSense · The Air, Made Visible</div>',
+        unsafe_allow_html=True,
+    )
+    st.title("See what you're breathing. Know what's next.")
+    st.markdown(
+        '<p class="as-subhead">AirSense connects weekday traffic patterns to air quality across Ludhiana, '
+        "Chandigarh, and Amritsar, and forecasts the next 24 hours so numbers become decisions.</p>",
+        unsafe_allow_html=True,
+    )
 
     # 1. Sidebar: City selector & batch metadata
     st.sidebar.header("Configuration")
@@ -298,7 +486,7 @@ def main() -> None:
             for provider, msg in diag.items():
                 st.caption(f"**{provider}:** {msg}")
 
-    # 2. Current AQI + Health Advisory Card
+    # 2. Current AQI + Health Advisory Card (Semi-Circular Gauges)
     _render_advisory_cards(city_frames)
 
     # 3. Historical Trend Chart
@@ -332,6 +520,9 @@ def main() -> None:
         file_name=f"airsense_{primary_city.lower()}_{start_str}_to_{end_str}.md",
         mime="text/markdown",
     )
+
+    # 9. Architecture, CPCB Scale & Team Tabs
+    _render_project_info_tabs()
 
 
 if __name__ == "__main__":
